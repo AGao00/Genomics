@@ -14,6 +14,7 @@ public:
     int length() const;
     string name() const;
     bool extract(int position, int length, string& fragment) const;
+    void print();
 private:
     string m_name;
     string m_sequence;
@@ -55,6 +56,7 @@ bool GenomeImpl::load(istream& genomeSource, vector<Genome>& genomes)
             // check each character to see if they are ACTGN
         for (int i = 0; i < line.size(); i ++) {
             char c = toupper(line[i]);
+            line[i] = c;
             switch (c) {
                 case 'A':
                 case 'G':
@@ -92,7 +94,7 @@ string GenomeImpl::name() const
 bool GenomeImpl::extract(int position, int length, string& fragment) const
 {
         // if length causes out of bounds, or position/length are invalid values, return false
-    if (position + length >= m_length || position < 0 || length < 0)
+    if (position + length > m_length || position < 0 || length < 0)
         return false;
     
         // set fragment to substring and return true
