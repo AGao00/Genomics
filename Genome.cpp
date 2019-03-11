@@ -3,6 +3,7 @@
 #include <vector>
 #include <iostream>
 #include <istream>
+#include <cctype>
 using namespace std;
 
 class GenomeImpl
@@ -28,7 +29,54 @@ GenomeImpl::GenomeImpl(const string& nm, const string& sequence)
 
 bool GenomeImpl::load(istream& genomeSource, vector<Genome>& genomes) 
 {
-    return false;  // This compiles, but may not be correct
+    std::string line;
+    std::string name;
+    std::string genome;
+    
+    while (getline(genomeSource, line)) {
+        if (line[0] == '>') {
+                // if start of new sequence, create Genome object with previous sequence
+            if (name != "" && genome != "")
+                genomes.push_back(Genome(name, genome));
+            
+                // if invalid state, return false
+            if (line.size() == 1 || !isalnum(line[1]))
+                return false;
+            
+                // set name to new name, and genome to empty
+            name = line.substr(1, line.length()-1);
+            genome = "";
+            continue;
+        }
+            // if no name for sequence
+        if (name == "")
+            return false;
+        
+            // check each character to see if they are ACTGN
+        for (int i = 0; i < line.size(); i ++) {
+            char c = toupper(line[i]);
+            switch (c) {
+                case 'A':
+                case 'G':
+                case 'T':
+                case 'C':
+                case 'N':
+                    break;
+                default:
+                    return false;
+            }
+        }
+            // append line to genome
+        genome += line;
+    }
+    
+    if (name == "" || genome == "")
+        return false;
+    
+        // push last Genome object into genomes
+    genomes.push_back(Genome(name, genome));
+    
+    return true;
 }
 
 int GenomeImpl::length() const
