@@ -9,6 +9,8 @@
 using namespace std;
 
 using Pair = pair<string, int>;
+using intPair = pair<int, int>;
+using intPairList = list<intPair>;
 
 class GenomeMatcherImpl
 {
@@ -21,6 +23,8 @@ public:
 private:
     Trie<Pair>* library;
     int m_minLength;
+    
+    vector<DNAMatch> findGenomesHelper(const string& fragment, int minimumLength) const;
 };
 
 GenomeMatcherImpl::GenomeMatcherImpl(int minSearchLength)
@@ -37,7 +41,7 @@ void GenomeMatcherImpl::addGenome(const Genome& genome)
     
     while (genome.extract(index, m_minLength, sequence)) {
         Pair p;
-        p.first = sequence;
+        p.first = genome.name();
         p.second = index;
         library->insert(sequence, p);
         index++;
@@ -45,7 +49,7 @@ void GenomeMatcherImpl::addGenome(const Genome& genome)
     
     if (index < genome.length() && genome.extract(index, genome.length()-index, sequence)) {
         Pair p;
-        p.first = sequence;
+        p.first = genome.name();
         p.second = index;
         library->insert(sequence, p);
     }
@@ -56,57 +60,117 @@ int GenomeMatcherImpl::minimumSearchLength() const
     return m_minLength;
 }
 
-bool GenomeMatcherImpl::findGenomesWithThisDNA(const string& fragment, int minimumLength, bool exactMatchOnly, vector<DNAMatch>& matches) const
-{
+bool GenomeMatcherImpl::findGenomesWithThisDNA(const string& fragment, int minimumLength, bool exactMatchOnly, vector<DNAMatch>& matches) const {
     if (fragment.size() < minimumLength || minimumLength < minimumSearchLength())
         return false;
     
+        // stores all results on matches
     vector<DNAMatch> results;
     
-    int index = 0, length = minimumSearchLength(), remaining_length = static_cast<int>(fragment.size())-length;
-        // res is vector of all pairs that have path in Trie library equal to first subsequence of fragment
-    vector<Pair> res = library->find(fragment.substr(index, length), exactMatchOnly);
-    
-        // unordered_map of Genome name mapped to a vector of positions
-    unordered_map<string, vector<int>> possible_matches;
-    for (int i = 0; i < res.size(); i++) {
-        Pair p = res[i];
-        possible_matches[p.first].push_back(p.second);
+        // if exactMatchOnly
+    if (exactMatchOnly) {
+        auto x = findGenomesHelper(fragment, minimumLength);
+        results.insert(results.end(), x.begin(), x.end());
     }
-    
-        // while there is remaining substrings of fragment not yet processed
-    while (remaining_length > 0) {
-        index += length;
-        if (remaining_length < length)
-            length = remaining_length;
-        
-            // iterate through all found Pairs of new subsequence
-        res = library->find(fragment.substr(index, length), exactMatchOnly);
-        for (int i = 0; i < res.size(); i++) {
-            Pair p = res[i];
-            auto vals = possible_matches.find(p.first);
-            
-                // if Genome name has been found before, add position to vector
-            if (vals != possible_matches.end())
-                possible_matches[p.first].push_back(p.second);
+    else {
+            // calculate all possible SNiPs
+        char bases[4] = { 'A', 'C', 'G', 'T' };
+        for (int i = 1; i < fragment.size(); i++) {
+            for (int j = 0; j < 4; j++) {
+                auto x = findGenomesHelper(fragment.substr(0, i) + bases[j] + fragment.substr(i+1), minimumLength);
+                results.insert(results.end(), x.begin(), x.end());
+            }
         }
-        
-        remaining_length -= length;
     }
     
-    // now we have a hashtable of Genome names and positions within those names that are possibly matches of fragment
-    for (auto x : possible_matches) {
-        string gen = x.first;
-        vector<int> values = x.second;
-        
-    }
+        // if there are no matches
+    if (results.empty())
+        return false;
     
+        // set matches to results
+    matches = results;
     
-    return false;  // This compiles, but may not be correct
+    return true;  // This compiles, but may not be correct
 }
 
-bool GenomeMatcherImpl::findRelatedGenomes(const Genome& query, int fragmentMatchLength, bool exactMatchOnly, double matchPercentThreshold, vector<GenomeMatch>& results) const
-{
+vector<DNAMatch> GenomeMatcherImpl::findGenomesHelper(const string& fragment, int minimumLength) const {
+    // preconditions: fragment and minimumLength are appropriate lengths, called only when exactMatchOnly is true
+    
+    vector<DNAMatch> results;
+    
+    int length = minimumSearchLength();
+        // vector of pairs of ints hold potential matches, and the pairs hold starting and ending position of match
+    unordered_map<string, intPairList> genomes;
+    vector<Pair> res = library->find(fragment.substr(0, length), true);
+    
+        // put all Pairs in res into genomes, so can keep track of number of possible matches
+    for (int i = 0; i < res.size(); i++) {
+        string name = res[i].first;
+        int pos = res[i].second;
+        bool repeat = false;
+        if (genomes.find(name) != genomes.end()) {
+            auto list = genomes[name];
+            for (auto pointer = list.begin(); pointer != list.end(); pointer++) {
+                if ((*pointer).second > pos)
+                    repeat = true;
+            }
+        }
+        if (!repeat)
+            genomes[name].push_back(intPair(pos, pos+length));
+    }
+    
+    for (int i = 1; i < fragment.size(); i++) {
+            // make sure length won't exceed bounds of string
+        if (i+length > fragment.size())
+            length = static_cast<int>(fragment.size())-i;
+        
+            // find new subsequence of fragment
+        res = library->find(fragment.substr(i, length), true);
+        
+            // go through all pairs found in library
+        for (int j = 0; j < res.size(); j++) {
+            int pos = res[j].second;
+            string name = res[j].first;
+            
+                // if name not in original list of possible matches, discard as viable match
+            if (genomes.find(name) == genomes.end())
+                continue;
+            
+            auto v = genomes[name];
+            for (auto k = v.begin(); k != v.end();) {
+                auto p = *k;
+                
+                    // if found match of subsequence links up to original match, extend position of last character matching
+                if (p.first+i == pos) {
+                    p.second = pos+length;
+                    k++;
+                }
+                    // if potential match's length is less than minimumLength and will never be enlongated, delete
+                else if (p.second - p.first < minimumLength)
+                    k = v.erase(k);
+            }
+        }
+    }
+    
+        // genomes should be filled with Genome names and the starting/ending position of the matches
+    for (auto match : genomes) {
+            // for all matches found in that one genome, get starting position and length
+        for (auto i = match.second.begin(); i != match.second.end(); i++) {
+            DNAMatch m;
+            m.genomeName = match.first;
+            m.position = (*i).first;
+            m.length = (*i).second - m.position;
+            if (m.length < minimumLength)
+                continue;
+            results.push_back(m);
+        }
+    }
+    
+    return results;
+}
+
+bool GenomeMatcherImpl::findRelatedGenomes(const Genome& query, int fragmentMatchLength, bool exactMatchOnly, double matchPercentThreshold, vector<GenomeMatch>& results) const {
+    
     return false;  // This compiles, but may not be correct
 }
 
