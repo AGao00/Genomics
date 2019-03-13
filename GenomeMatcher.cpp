@@ -27,6 +27,7 @@ private:
     unordered_map<string, const Genome*> genomeLibrary;
     
     static bool intPairComp(intPair x, intPair y);
+    bool isAMatch(string& sequence, const string& fragment, int minLength) const;
 };
 
 GenomeMatcherImpl::GenomeMatcherImpl(int minSearchLength)
@@ -82,42 +83,35 @@ bool GenomeMatcherImpl::findGenomesWithThisDNA(const string& fragment, int minim
             stores[res[i].first].push_back(temp);
         }
         
-        for (int index = 1; index < fragment.size()-length; index++) {
-            res = m_library->find(fragment.substr(index, length), exactMatchOnly);
-            for (int i = 0; i < res.size(); i++) {
-                if (stores.find(res[i].first) == stores.end())
-                    continue;
-                intPairVector temp = stores.at(res[i].first);
-                int pos = res[i].second;
-                bool continuation = false;
-                for (auto it = temp.begin(); it != temp.end(); it++) {
-                    int startpos = (*it).first, seq_len = (*it).second;
-                    if (startpos+seq_len+1 >= pos+length) {
-                        (*it).second++;
-                        continuation = true;
-                    }
-                }
-                if (!continuation) {
-                    intPair t;
-                    t.first = pos;
-                    t.second = length;
-                    temp.push_back(t);
+        for (auto it = stores.begin(); it != stores.end(); it++) {
+            intPairVector temp = (*it).second;
+            string name = (*it).first;
+            const Genome* g = (*genomeLibrary.find(name)).second;
+            intPairVector holder;
+            
+            for (int i = 0; i < temp.size(); i++) {
+                int pos = temp[i].first;
+                string extract;
+                if (g->extract(pos, static_cast<int>(fragment.size()), extract) && isAMatch(extract, fragment, minimumLength)) {
+                    intPair toAdd;
+                    toAdd.first = pos;
+                    toAdd.second = static_cast<int>(extract.size());
+                    holder.push_back(toAdd);
                 }
             }
+            
+            if (holder.empty())
+                continue;
+            
+            make_heap(holder.begin(), holder.end(), GenomeMatcherImpl::intPairComp);
+            intPair x = holder.front();
+            DNAMatch toAdd;
+            toAdd.genomeName = name;
+            toAdd.length = x.second;
+            toAdd.position = x.first;
+            results.push_back(toAdd);
         }
         
-        for (auto it = stores.begin(); it != stores.end(); it++) {
-            vector<intPair> temp = (*it).second;
-            make_heap(temp.begin(), temp.end(), GenomeMatcherImpl::intPairComp);
-            intPair t = temp.front();
-            if (t.second >= minimumLength) {
-                DNAMatch m;
-                m.genomeName = (*it).first;
-                m.length = t.second;
-                m.position = t.first;
-                results.push_back(m);
-            }
-        }
     }
     else {
         char bases[5] = { 'A', 'C', 'T', 'G', 'N'};
@@ -141,6 +135,22 @@ bool GenomeMatcherImpl::findGenomesWithThisDNA(const string& fragment, int minim
     matches = results;
     
     return true;  // This compiles, but may not be correct
+}
+
+bool GenomeMatcherImpl::isAMatch(string& sequence, const string& fragment, int minLength) const {
+    // return true if sequence is longer than minLength and ALSO matches with fragment, modifying sequence appropriately
+    
+        // if sequence is equal to fragment, then true
+    if (sequence == fragment)
+        return true;
+    
+    for (int i = static_cast<int>(fragment.size())-1; i >= minLength; i++) {
+            // if some subsequence of sequence is equal to the same subsequence of fragment, then true
+        if (sequence.substr(0, i) == fragment.substr(0, i))
+            return true;
+    }
+    
+    return false;
 }
 
 bool GenomeMatcherImpl::intPairComp(intPair x, intPair y) {
