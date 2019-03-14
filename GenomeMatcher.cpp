@@ -20,12 +20,14 @@ public:
     int minimumSearchLength() const;
     bool findGenomesWithThisDNA(const string& fragment, int minimumLength, bool exactMatchOnly, vector<DNAMatch>& matches) const;
     bool findRelatedGenomes(const Genome& query, int fragmentMatchLength, bool exactMatchOnly, double matchPercentThreshold, vector<GenomeMatch>& results) const;
+    ~GenomeMatcherImpl();
 private:
     Trie<Pair>* m_library;
     int m_minLength;
     unordered_map<string, const Genome*> genomeLibrary;
     
     static bool PairComp(Pair x, Pair y);
+    static bool sortGenomeMatch(GenomeMatch x, GenomeMatch y);
     bool isAMatch(string& sequence, const string& fragment, int minLength) const;
     bool isASNiP(string& sequence, const string& fragment, int minLength) const;
     unordered_map<string, PairVector> findGenomesHelper(const string& fragment, int minLength) const;
@@ -35,6 +37,15 @@ GenomeMatcherImpl::GenomeMatcherImpl(int minSearchLength)
 {
     m_minLength = minSearchLength;
     m_library = new Trie<Pair>;
+}
+
+GenomeMatcherImpl::~GenomeMatcherImpl() {
+    delete m_library;
+    
+    for (auto it = genomeLibrary.begin(); it != genomeLibrary.end(); it++) {
+        pair<string, const Genome*> item = *it;
+        delete item.second;
+    }
 }
 
 void GenomeMatcherImpl::addGenome(const Genome& genome)
@@ -230,8 +241,20 @@ bool GenomeMatcherImpl::findRelatedGenomes(const Genome& query, int fragmentMatc
         return false;
     
     results = percentages;
+    sort(results.begin(), results.end(), sortGenomeMatch);
     
-    return true;  // This compiles, but may not be correct
+    return true;
+}
+
+bool GenomeMatcherImpl::sortGenomeMatch(GenomeMatch x, GenomeMatch y) {
+    // return true if x is before y
+    
+    if (x.percentMatch > y.percentMatch)
+        return true;
+    if (x.percentMatch == y.percentMatch && x.genomeName < y.genomeName)
+        return true;
+    
+    return false;
 }
 
 //******************** GenomeMatcher functions ********************************
